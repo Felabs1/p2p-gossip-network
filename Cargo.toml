@@ -1,0 +1,14 @@
+[package]
+name = "p2p-chat"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+# TOKIO: The engine that lets us do multiple things at once (Async)
+tokio = { version = "1", features = ["full"] }
+
+# TOKIO-UTIL: Helps turn raw bytes into strings
+tokio-util = { version = "0.7", features = ["codec"] }
+
+# FUTURES: Tools for working with streams of data
+futures = "0.3"
