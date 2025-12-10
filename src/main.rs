@@ -5,6 +5,9 @@ use std::env;
 use std::collections::HashMap;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio_util::codec::{Framed, LinesCodec};
+use futures::SinkExt;
+use futures::StreamExt;
 
 // THE STATE
 // we need a phone book to keep track of everyone we are connected to
@@ -82,5 +85,43 @@ async fn main() -> Result<(), Box<dyn std::error::Error>>{
 // THE CONNECTOR LOGIC
 // this function handles every connection, incoming or outgoing
 async fn handle_connection(peers: PeerMap, stream: TcpStream, addr: SocketAddr) {
-    
+    // wrap the stream so we can read/write lines instead of bytes
+    let mut framed = Framed::new(stream, LinesCodec::new());
+    // create a channel for this specific connection
+    let (tx, mut rx) = mpsc::unbounded_channel();
+    // add them to the phonebook
+    peers.lock().unwrap().insert(addr, tx);
+    // the select loop
+
+    loop {
+        tokio::select! {
+            // CASE A: they send us a message over the network
+            result = framed.next() => match result {
+                Some(Ok(msg)) => {
+                    println!("{} ", msg);
+
+                    // GOSSIP PROTOCOL
+                    // forward the message to everyone else
+                    let peers_guard = peers.lock().unwrap();
+                    for (peer_addr, peer_tx) in peers_guard.iter() {
+                        if *peer_addr != addr {
+                            let _ = peer_tx.send(msg.clone());
+                        }
+                    }
+                }
+                _ => break,
+            },
+
+            // CASE B: we typed something (received via channel)
+            Some(msg) = rx.recv() => {
+                // send it over the network
+                let _ = framed.send(msg).await;
+            }
+        }
+    }
+
+    // cleanup
+    peers.lock().unwrap().remove(&addr);
+
+
 }
